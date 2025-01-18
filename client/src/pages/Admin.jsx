@@ -1,13 +1,16 @@
 import { useEffect, useState } from "react";
 import Button from "react-bootstrap/Button";
 import { useNavigate } from "react-router-dom";
+import { post } from "../Services/apiEndpoint.jsx";
+import { Logout } from "../redux/authSlice.js";
+import { useDispatch } from "react-redux";
 
 function Admin() {
   const navigate = useNavigate();
   const SHEETBEST_URL =
     "https://api.sheetbest.com/sheets/8aa8106b-570a-465d-9c39-9f7fad53b1c0";
   const [orders, setOrders] = useState([]);
-
+  const dispatch = useDispatch();
   // Fetch Orders from the API
   const getOrders = async () => {
     try {
@@ -26,7 +29,22 @@ function Admin() {
     getOrders();
   }, []);
 
-  //Handle Edit Order
+  const handleRegister = () => {
+    navigate(`/admin/register`);
+  };
+
+  const handleLogout = async () => {
+    try {
+      const request = await post("/api/auth/logout");
+      if (request.status === 200) {
+        dispatch(Logout());
+        navigate("/login");
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  };
+  //Handle Adding Order
   const handleAdd = () => {
     navigate(`/user`);
   };
@@ -65,6 +83,17 @@ function Admin() {
   return (
     <div className="container">
       <h2 className="mb-4">Order List</h2>
+      <div className="d-flex align-items-center">
+        <Button variant="primary" className="me-2" onClick={handleAdd}>
+          Add New Order
+        </Button>
+        <Button variant="secondary" className="me-2" onClick={handleRegister}>
+          Register User
+        </Button>
+        <Button variant="danger" onClick={handleLogout}>
+          Logout
+        </Button>
+      </div>
       {Array.isArray(orders) && orders.length > 0 ? (
         <table className="table table-bordered table-striped">
           <thead>
@@ -92,12 +121,6 @@ function Admin() {
                 <td>{order["Product Name"]}</td>
                 <td>{order["Order Qty In NOS"]}</td>
                 <td>
-                  <button
-                    className="btn btn-primary btn-sm"
-                    onClick={() => handleAdd()}
-                  >
-                    Add
-                  </button>
                   <Button
                     variant="danger"
                     size="sm"

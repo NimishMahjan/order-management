@@ -9,14 +9,11 @@ function Home() {
   const navigate = useNavigate();
   const user = useSelector((state) => state.Auth.user);
   const dispatch = useDispatch();
-  console.log(user);
   const SHEETBEST_URL =
     "https://api.sheetbest.com/sheets/8aa8106b-570a-465d-9c39-9f7fad53b1c0";
 
   const [orders, setOrders] = useState({
     "Order No": "",
-    "Order IN Time": "",
-    "Order Recived Date & Time": "",
     "Desired Delivery in Days": "",
     "Party Name": "",
     Station: "",
@@ -29,11 +26,12 @@ function Home() {
   const [stations, setStations] = useState([]);
   const [products, setProducts] = useState([]);
   const [parties, setParties] = useState([]);
-  const [lastOrderNumber, setLastOrderNumber] = useState("Tk000"); // Initialize the last order number
+  const [lastOrderNumber, setLastOrderNumber] = useState("tk000");
 
   useEffect(() => {
     const fetchData = async () => {
       try {
+        // Fetch CSV data for stations, products, and parties
         const stationsData = await readCSV("/data/stations.csv");
         const productsData = await readCSV("/data/products.csv");
         const partiesData = await readCSV("/data/parties.csv");
@@ -42,27 +40,22 @@ function Home() {
         setProducts(productsData.map((row) => row.name));
         setParties(partiesData.map((row) => row.name));
       } catch (error) {
-        console.error("Error reading CSV files:", error);
+        console.error("Error fetching data:", error);
       }
     };
 
     fetchData();
   }, []);
 
-  const goToAdmin = () => {
-    navigate("/admin");
-  };
-
   const handleLogout = async () => {
     try {
       const request = await post("/api/auth/logout");
-      const response = request.data;
       if (request.status === 200) {
         dispatch(Logout());
         navigate("/login");
       }
     } catch (err) {
-      console.log(err);
+      console.error(err);
     }
   };
 
@@ -85,29 +78,49 @@ function Home() {
     setOrderProducts(updatedProducts);
   };
 
-  // Helper function to generate the next order number
-  const getNextOrderNumber = (currentOrderNumber) => {
-    const numberPart = parseInt(currentOrderNumber.slice(2)) + 1;
-    return `tk${numberPart.toString().padStart(3, "0")}`;
+  const goToAdmin = () => {
+    navigate("/admin");
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
 
-    // Generate the next order number
-    const nextOrderNumber = getNextOrderNumber(lastOrderNumber);
-    setOrders((prevOrders) => ({ ...prevOrders, "Order No": nextOrderNumber }));
-
-    console.log("Orders being sent:", {
-      ...orders,
-      "Order No": nextOrderNumber,
-    });
-    console.log("Order Products:", orderProducts);
-
     try {
-      const rowsToInsert = orderProducts.map((product) => ({
+      // Fetch the latest order data
+      const res = await fetch(SHEETBEST_URL);
+      const data = await res.json();
+
+      // Determine the next order number
+      let nextOrderNumber = "tk001"; // Default starting order number
+      if (Array.isArray(data) && data.length > 0) {
+        const existingOrderNumbers = data
+          .map((row) => row["Order No"])
+          .filter(
+            (orderNo) => typeof orderNo === "string" && orderNo.startsWith("tk")
+          )
+          .map((orderNo) => parseInt(orderNo.slice(2)))
+          .filter((num) => !isNaN(num));
+
+        if (existingOrderNumbers.length > 0) {
+          const maxOrderNumber = Math.max(...existingOrderNumbers);
+          nextOrderNumber = `tk${(maxOrderNumber + 1)
+            .toString()
+            .padStart(3, "0")}`;
+        }
+      }
+
+      const currentDateTime = new Date().toISOString();
+
+      // Prepare the order data
+      const updatedOrders = {
         ...orders,
         "Order No": nextOrderNumber,
+        "Order Recived Date & Time": currentDateTime,
+      };
+
+      // Add the order to the sheet
+      const rowsToInsert = orderProducts.map((product) => ({
+        ...updatedOrders,
         "Product Name": product.product,
         "Order Qty In NOS": product.quantity,
       }));
@@ -123,24 +136,19 @@ function Home() {
 
         if (!res.ok) {
           const errorData = await res.json();
-          console.error("Error response from API:", errorData);
           alert(`Error adding order: ${errorData.detail || "Unknown error"}`);
           return;
         }
       }
 
-      console.log("Order added successfully");
       alert("Order added successfully!");
-      navigate("/user");
 
-      // Update last order number
+      // Update the last order number
       setLastOrderNumber(nextOrderNumber);
 
-      // Reset form
+      // Reset the form and state
       setOrders({
         "Order No": "",
-        "Order IN Time": "",
-        "Order Recived Date & Time": "",
         "Desired Delivery in Days": "",
         "Party Name": "",
         Station: "",
@@ -156,31 +164,7 @@ function Home() {
     <div className="container mt-4">
       <h1 className="mb-4">Add New Order</h1>
       <form onSubmit={handleSubmit} className="row g-3">
-        {Object.keys(orders).map((field, index) =>
-          [
-            "Station",
-            "Party Name",
-            "Desired Delivery in Days",
-            "Order No",
-          ].includes(field) ? null : (
-            <div className="col-md-6" key={index}>
-              <label htmlFor={field} className="form-label">
-                {field.replace(/_/g, " ")}
-              </label>
-              <input
-                type={field.includes("Time") ? "datetime-local" : "text"}
-                id={field}
-                name={field}
-                className="form-control"
-                placeholder={field.replace(/_/g, " ")}
-                value={orders[field]}
-                onChange={handleOrderChange}
-                required
-              />
-            </div>
-          )
-        )}
-
+        {/* Order Form */}
         <div className="col-md-6">
           <label htmlFor="Station" className="form-label">
             Station
@@ -254,7 +238,7 @@ function Home() {
           <h4>Products</h4>
           {orderProducts.map((orderProduct, index) => (
             <div className="row g-3 align-items-center mb-2" key={index}>
-              <div className="col-md-6">
+              <div className="col-md-5">
                 <label htmlFor={`product-${index}`} className="form-label">
                   Product
                 </label>
@@ -295,31 +279,34 @@ function Home() {
                   required
                 />
               </div>
-              <div className="col-md-2">
+
+              <div className="col-md-3 d-flex align-items-end justify-content-start">
                 {index > 0 && (
                   <button
                     type="button"
-                    className="btn btn-danger mt-4"
+                    className="btn btn-danger me-2"
                     onClick={() => removeProductRow(index)}
                   >
-                    Remove
+                    -
+                  </button>
+                )}
+                {index === orderProducts.length - 1 && (
+                  <button
+                    type="button"
+                    className="btn btn-secondary"
+                    onClick={addProductRow}
+                  >
+                    +
                   </button>
                 )}
               </div>
             </div>
           ))}
-          <button
-            type="button"
-            className="btn btn-secondary"
-            onClick={addProductRow}
-          >
-            Add Product
-          </button>
         </div>
 
         <div className="col-12">
           <button className="btn btn-primary" type="submit">
-            Add Order
+            Save Order
           </button>
         </div>
         <div>
@@ -336,4 +323,5 @@ function Home() {
     </div>
   );
 }
+
 export default Home;
